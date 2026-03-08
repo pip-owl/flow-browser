@@ -33,6 +33,12 @@ type TabsControllerEvents = {
 
 type WindowSpaceReference = `${number}-${string}`;
 
+function shouldPersistTab(tab: Tab): boolean {
+  if (tab.ephemeral) return false;
+  if (tab.loadedProfile.profileData.ephemeral) return false;
+  return true;
+}
+
 /**
  * Per-tab managers that the controller owns.
  * Stored alongside each Tab so the controller can call lifecycle/layout methods.
@@ -125,7 +131,7 @@ class TabsController extends TypedEventEmitter<TabsControllerEvents> {
    * repeated across multiple event handlers.
    */
   private persistTab(tab: Tab): void {
-    if (tab.ephemeral) return;
+    if (!shouldPersistTab(tab)) return;
     const lifecycleManager = this.tabManagers.get(tab.id)?.lifecycle;
     const windowGroupId = `w-${tab.getWindow().id}`;
     const serialized = serializeTab(tab, windowGroupId, lifecycleManager?.preSleepState);
@@ -313,15 +319,6 @@ class TabsController extends TypedEventEmitter<TabsControllerEvents> {
       // Mark tab dirty for persistence
       this.persistTab(tab);
     });
-    tab.on("space-changed", () => {
-      if (quitController.isQuitting) return;
-
-      // Structural change — needs full data refresh (tab moved between spaces)
-      windowTabsChanged(tab.getWindow().id);
-
-      // Mark tab dirty for persistence
-      this.persistTab(tab);
-    });
     tab.on("window-changed", (oldWindowId) => {
       if (quitController.isQuitting) return;
 
@@ -366,8 +363,8 @@ class TabsController extends TypedEventEmitter<TabsControllerEvents> {
         return;
       }
 
-      // Add to recently closed and remove from persistence (skip for ephemeral tabs)
-      if (!tab.ephemeral) {
+      // Add to recently closed and remove from persistence (skip for ephemeral tabs/profiles)
+      if (shouldPersistTab(tab)) {
         const windowGroupId = `w-${tab.getWindow().id}`;
         const serialized = serializeTab(tab, windowGroupId, lifecycleManager.preSleepState);
         const group = this.getTabGroupByTabId(tab.id);
